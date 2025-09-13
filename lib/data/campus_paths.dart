@@ -1,71 +1,31 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-// A rebuilt and more accurate path network based on user-provided destination coordinates.
+// The path network for the VIT Vellore campus.
+// This file should ONLY contain high-accuracy paths recorded via GPS to ensure accuracy.
 final List<List<LatLng>> campusPaths = [
-  // =======================================================================
-  // SECTION 1: CORE ACADEMIC & CENTRAL ROUTES
-  // =======================================================================
 
-  // Path A: Main Gate to Central Academic Plaza and towards TT
-  // This is the primary East-West corridor of the academic area.
+  // --- High-accuracy recorded path from J Block to PRP Side Entrance ---
+  // This is the primary "highway" that connects TT, SJT, and PRP.
   [
-    const LatLng(12.9687, 79.1543),   // Main Gate
-    const LatLng(12.9697, 79.1547),   // G.D. Naidu Block
-    const LatLng(12.9698, 79.1556),   // Anna Auditorium
-    const LatLng(12.9688, 79.1558),   // Dr. M.G.R. Block
-    const LatLng(12.9696, 79.1558),   // Main Building (MB)
-    const LatLng(12.9690, 79.1568),   // Periyar Central Library
-    const LatLng(12.9709, 79.1594),   // Technology Tower (TT) - Key Junction
+    const LatLng(12.97197, 79.15824), // Start near J Block
+    const LatLng(12.97162, 79.15818), // Path Turn 1
+    const LatLng(12.97104, 79.15864), // Path Turn 2
+    const LatLng(12.97103, 79.15918), // Path Turn 3 (Near Technology Tower)
+    const LatLng(12.97105, 79.15954), // Mid-point
+    const LatLng(12.97117, 79.16005), // Path continues
+    const LatLng(12.97126, 79.16048), // Path continues
+    const LatLng(12.97130, 79.16087), // Path Turn 4
+    const LatLng(12.97120, 79.16350), // Near Silver Jubilee Tower (SJT)
+    const LatLng(12.97138, 79.16131), // Path continues
+    const LatLng(12.97144, 79.16191), // Path Turn 5
+    const LatLng(12.97148, 79.16233), // Path continues
+    const LatLng(12.97162, 79.16276), // Path Turn 6
+    const LatLng(12.97165, 79.16336), // Path continues
+    const LatLng(12.97178, 79.16390), // Path continues
+    const LatLng(12.97175, 79.16549), // Near PRP Side Entrance
+    const LatLng(12.97128, 79.16635), // Pearl Research Park (PRP)
   ],
-
-  // =======================================================================
-  // SECTION 2: HOSTEL ROUTES
-  // =======================================================================
-
-  // Path B: Main road connecting TT to the first group of Men's Hostels
-  [
-    const LatLng(12.9709, 79.1594),   // Technology Tower (TT)
-    const LatLng(12.9720, 79.1573),   // Mens Hostel - H Block
-    const LatLng(12.9720, 79.1580),   // Mens Hostel - J Block
-    const LatLng(12.9728, 79.1580),   // Mens Hostel - C Block
-    const LatLng(12.9727, 79.1587),   // Mens Hostel - D Block
-    const LatLng(12.9727, 79.1597),   // Mens Hostel - E Block
-  ],
-
-  // Path C: Path connecting the second group of Men's Hostels
-  [
-    const LatLng(12.9728, 79.1571),   // Mens Hostel - A Block
-    const LatLng(12.9737, 79.1582),   // Mens Hostel - F Block
-    const LatLng(12.9744, 79.1574),   // Mens Hostel - B Block
-  ],
-
-  // Path D: Main road from TT towards Ladies' Hostels, SJT, and PRP
-  [
-    const LatLng(12.9709, 79.1594),   // Technology Tower (TT)
-    const LatLng(12.9712, 79.1608),   // Ladies Hostel - C Block
-    const LatLng(12.9712, 79.1610),   // Ladies Hostel - D Block
-    const LatLng(12.9712, 79.1620),   // Ladies Hostel - E Block
-    const LatLng(12.9709, 79.1627),   // Ladies Hostel - F Block
-    const LatLng(12.9712, 79.1635),   // Silver Jubilee Tower (SJT)
-    const LatLng(12.9712, 79.1663),   // Pearl Research Park (PRP)
-  ],
-
-  // Path E: Connects the farthest group of Men's Hostels
-  [
-    const LatLng(12.9725, 79.1613),   // Mens Hostel - K Block
-    const LatLng(12.9727, 79.1626),   // Mens Hostel - L Block
-    const LatLng(12.9728, 79.1637),   // Mens Hostel - M Block
-    const LatLng(12.9732, 79.1635),   // Mens Hostel - R Block
-    const LatLng(12.9738, 79.1639),   // Mens Hostel - Q Block
-    const LatLng(12.9736, 79.1642),   // Mens Hostel - P Block
-    const LatLng(12.9750, 79.1636),   // Mens Hostel - N Block
-  ],
-
-  // Path F: Connects the south-side Ladies' Hostels
-  [
-    const LatLng(12.9683, 79.1579),   // Ladies Hostel - A/B Block Area
-    const LatLng(12.9682, 79.1597),   // Ladies Hostel - G/H Block Area
-    const LatLng(12.9681, 79.1595),   // Ladies Hostel - J Block
-  ],
+  
+  // You can add more high-accuracy recorded paths here in the future.
+  // The logic will work best if they connect to this main path at a junction.
 ];
-

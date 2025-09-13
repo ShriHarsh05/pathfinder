@@ -17,6 +17,9 @@ final List<Destination> destinations = [
   Destination(name: 'Dr. M.G.R. Block', location: const LatLng(12.96880124,79.15588792)),
   Destination(name: 'Peal Research Park (PRP)', location: const LatLng(12.97128259,79.16635968)),
   
+  // --- NEW DESTINATION ---
+  Destination(name: 'PRP Side Entrance', location: const LatLng(12.97175, 79.16549)),
+
   // Library & Auditoriums
   Destination(name: 'Periyar Central Library', location: const LatLng(12.96907830,79.15681051)),
   Destination(name: 'Anna Auditorium', location: const LatLng(12.9698135, 79.1556754)),

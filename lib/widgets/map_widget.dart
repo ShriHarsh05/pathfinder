@@ -5,11 +5,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pathfinder_indoor_navigation/data/campus_paths.dart';
 import 'package:pathfinder_indoor_navigation/models/destination.dart';
+import 'package:pathfinder_indoor_navigation/utils/path_finder.dart';
 
-// Defines the rectangular boundary for the VIT Vellore campus
 final LatLngBounds _campusBounds = LatLngBounds(
-  southwest: const LatLng(12.9650, 79.1530), // Lower-left corner of VIT Vellore
-  northeast: const LatLng(12.9770, 79.1650), // Upper-right corner of VIT Vellore
+  southwest: const LatLng(12.9650, 79.1530),
+  northeast: const LatLng(12.9770, 79.1650),
 );
 
 class MapWidget extends StatefulWidget {
@@ -107,7 +107,6 @@ class MapWidgetState extends State<MapWidget> {
     final userLocation =
         LatLng(widget.currentPosition.latitude, widget.currentPosition.longitude);
 
-    // 1. Draw all predefined campus paths in grey to show all possible walkways
     for (int i = 0; i < campusPaths.length; i++) {
       polylines.add(Polyline(
         polylineId: PolylineId('campus_path_$i'),
@@ -119,19 +118,32 @@ class MapWidgetState extends State<MapWidget> {
       ));
     }
 
-    // 2. If a destination is selected, draw a simple, straight "compass" line.
     if (widget.destination != null) {
-      polylines.add(
-        Polyline(
-          polylineId: const PolylineId('compass_line'),
-          points: [userLocation, widget.destination!.location],
-          color: Colors.lightBlueAccent,
-          width: 7,
-          zIndex: 1, // Draw this line on top of the grey paths
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-      );
+      final startPointInfo = findNearestPointOnPaths(userLocation);
+      final endPointInfo =
+          findNearestPointOnPaths(widget.destination!.location);
+
+      if (startPointInfo != null && endPointInfo != null) {
+        final pathSegment = getPathSegment(startPointInfo, endPointInfo);
+
+        final fullRoute = [
+          userLocation,
+          ...pathSegment,
+          widget.destination!.location,
+        ];
+
+        polylines.add(
+          Polyline(
+            polylineId: const PolylineId('snapped_route'),
+            points: fullRoute,
+            color: Colors.lightBlueAccent,
+            width: 7,
+            zIndex: 1,
+            startCap: Cap.roundCap,
+            endCap: Cap.roundCap,
+          ),
+        );
+      }
     }
 
     final Set<Marker> markers = {
@@ -182,4 +194,3 @@ class MapWidgetState extends State<MapWidget> {
     );
   }
 }
-

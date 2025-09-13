@@ -25,10 +25,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _initializeLocation();
   }
 
-  /// First, gets the initial position, then starts the continuous stream.
   Future<void> _initializeLocation() async {
     try {
-      // 1. Check permissions and services
       bool serviceEnabled;
       LocationPermission permission;
 
@@ -53,31 +51,28 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
-      // 2. Get the FIRST position before building the UI to prevent layout bugs
       final initialPosition = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.bestForNavigation,
       );
-
+      
       if (mounted) {
         setState(() {
           _currentPosition = initialPosition;
         });
       }
 
-      // 3. NOW, start the stream for live updates in the background
       _startLocationStream();
     } catch (e) {
       print("Error initializing location: $e");
       _showErrorDialog("Could not get initial location. Please try again.");
     }
   }
-
-  /// Starts the stream to listen for continuous location updates.
+  
   void _startLocationStream() {
     _positionStreamSubscription = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 1, // Update every 1 meter moved
+        distanceFilter: 1,
       ),
     ).listen((Position position) {
       if (mounted) {
@@ -121,7 +116,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Stack(
         children: [
-          // Show a loading indicator until the first location is fetched
           if (_currentPosition == null)
             const Center(child: CircularProgressIndicator())
           else
@@ -152,7 +146,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 80), // Space for the button
+              const SizedBox(height: 80),
             ],
           ),
           if (_selectedDestination != null) _buildStartNavigationButton(),
@@ -206,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const EdgeInsets.symmetric(horizontal: 40, vertical: 16.0),
               shape: RoundedRectangleBorder(
                 borderRadius:
-                    BorderRadius.circular(30.0), // Pill shape
+                    BorderRadius.circular(30.0),
               ),
               textStyle: const TextStyle(
                 fontSize: 18,
@@ -253,4 +247,3 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 }
-
