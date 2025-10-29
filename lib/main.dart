@@ -1,34 +1,50 @@
 import 'package:flutter/material.dart';
 import 'package:pathfinder_indoor_navigation/screens/home_screen.dart';
+import 'package:camera/camera.dart';
 
-void main() {
-  runApp(const MyApp());
+List<CameraDescription> cameras = [];
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    cameras = await availableCameras();
+  } on CameraException catch (e) {
+    print('Error initializing cameras: ${e.code}\n${e.description}');
+  }
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Pathfinder Indoor Navigation',
+      title: 'Pathfinder Navigation',
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        primarySwatch: Colors.deepPurple,
         visualDensity: VisualDensity.adaptivePlatformDensity,
-        scaffoldBackgroundColor: Colors.grey[100],
         appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.blue,
-          elevation: 0,
-        ),
-        cardTheme: CardThemeData(
+          backgroundColor: Colors.deepPurple,
+          foregroundColor: Colors.white,
           elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12.0),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.deepPurple,
+            foregroundColor: Colors.white,
+            elevation: 5,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: 12,
+            ),
           ),
         ),
       ),
-      home: const HomeScreen(),
+      home: HomeScreen(cameras: cameras),
     );
   }
 }

@@ -13,6 +13,9 @@ dependencies:
   google_maps_flutter: ^2.6.1
   provider: ^6.1.2
   searchfield: ^0.8.4 
+  image: ^4.1.7
+  camera: ^0.11.0+2
+  flutter_compass: ^0.8.1
 
 dev_dependencies:
   flutter_test:
@@ -23,3 +26,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/google_logo.png
+    - assets/binary_paint_cleaned_gdn.png
+    - assets/icons/location_dot.png
