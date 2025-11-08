@@ -28,3 +28,5 @@ flutter:
     - assets/google_logo.png
     - assets/binary_paint_cleaned_gdn.png
     - assets/icons/location_dot.png
+    - assets/maps/gdn_ground_floor.png
+    - assets/maps/gdn_ground_floor_graph.json

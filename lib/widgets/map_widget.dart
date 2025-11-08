@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pathfinder_indoor_navigation/models/destination.dart';
-import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
 
+// These bounds are for the outdoor map
 final LatLngBounds vitCampusBounds = LatLngBounds(
   southwest: const LatLng(12.9680, 79.1540), // Min lat, Min lng
   northeast: const LatLng(12.9755, 79.1665), // Max lat, Max lng
@@ -29,54 +29,50 @@ class MapWidget extends StatefulWidget {
 
 class _MapWidgetState extends State<MapWidget> {
   final Completer<GoogleMapController> _controller = Completer<GoogleMapController>();
-  ui.Image? _gdnMapImage;
-  bool _isInsideGdn = false;
-
-  //BitmapDescriptor _currentLocationIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
-  BitmapDescriptor _currentLocationIcon = BitmapDescriptor.defaultMarker;
-
-  // GDN Building Coordinates (User-provided: 12.9697, 79.1547)
-  static const LatLng _gdnBuildingLatLng = LatLng(12.9697, 79.1547); 
-  static const double _proximityRadiusMeters = 50.0; // Radius to switch to indoor map
+  // REMOVED: We will use the default blue pin instead of a custom icon
+  // BitmapDescriptor _currentLocationIcon = BitmapDescriptor.defaultMarker;
 
   @override
   void initState() {
     super.initState();
-    _loadIndoorMapAsset();
-    _checkIndoorStatus(widget.currentPosition);
-    _loadCustomMarker();
+    // REMOVED: No longer need to load a custom marker
+    // _loadCustomMarker();
+    // No longer check for indoor status here
   }
 
   @override
   void didUpdateWidget(covariant MapWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Recalculate proximity whenever the position updates
-    if (widget.currentPosition != oldWidget.currentPosition) {
-      _checkIndoorStatus(widget.currentPosition);
+    // No longer check for indoor status here
+
+    // --- NEW: Animate camera if navigating ---
+    if (widget.isNavigating && widget.currentPosition != oldWidget.currentPosition) {
+      _animateCameraToUser();
     }
   }
 
-  Future<void> _loadIndoorMapAsset() async {
-    try {
-      // Note: Make sure 'assets/maps/binary_paint_cleaned_gdn.png' is added to pubspec.yaml
-      final ByteData data = await rootBundle.load('assets/maps/binary_paint_cleaned_gdn.png');
-      final List<int> bytes = data.buffer.asUint8List();
-      final Completer<ui.Image> completer = Completer();
-      ui.decodeImageFromList(Uint8List.fromList(bytes), (img) {
-        return completer.complete(img);
-      });
-      _gdnMapImage = await completer.future;
-      if (mounted) setState(() {});
-    } catch (e) {
-      print("Error loading indoor map asset: $e");
-    }
+  // --- NEW: Function to animate camera ---
+  Future<void> _animateCameraToUser() async {
+    final GoogleMapController controller = await _controller.future;
+    controller.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: LatLng(widget.currentPosition.latitude, widget.currentPosition.longitude),
+          zoom: 18.0,
+          bearing: widget.currentPosition.heading, // Point camera in direction of travel
+          tilt: 45.0, // Angle the camera
+        ),
+      ),
+    );
   }
 
+  // REMOVED: This function is no longer needed
+  /*
   Future<void> _loadCustomMarker() async {
     try {
       final icon = await BitmapDescriptor.fromAssetImage(
-        const ImageConfiguration(size: Size(24, 24)), // You can adjust the size
-        'assets/icons/location_dot.png', // Make sure you create this file!
+        ImageConfiguration.empty, 
+        'assets/icons/location_dot.png', // Make sure this file exists!
       );
       if (mounted) {
         setState(() {
@@ -85,84 +81,12 @@ class _MapWidgetState extends State<MapWidget> {
       }
     } catch (e) {
       print("Error loading custom marker: $e");
-      // Keep the default icon if loading fails
     }
   }
+  */
 
-  void _checkIndoorStatus(Position position) {
-    // 1. Calculate distance to the GDN building entrance
-    final distance = Geolocator.distanceBetween(
-      position.latitude,
-      position.longitude,
-      _gdnBuildingLatLng.latitude,
-      _gdnBuildingLatLng.longitude,
-    );
-    
-    // 2. Check conditions for indoor map display:
-    // a) Destination must be an indoor location (isIndoor: true)
-    // b) User must be within the proximity radius
-    final isDestinationGdn = widget.destination?.building == 'GDN Block';
-    final isNearBuilding = distance < _proximityRadiusMeters;
-
-    final shouldBeIndoor = isDestinationGdn && isNearBuilding;
-
-    if (_isInsideGdn != shouldBeIndoor) {
-      if (mounted) {
-        setState(() {
-          _isInsideGdn = shouldBeIndoor;
-        });
-      }
-    }
-  }
-
-  // --- Map Display Functions ---
-
-  Widget _buildIndoorMap() {
-    // Determine the specific location string inside GDN to display (e.g., G07 Survey Lab)
-    final destinationName = widget.destination?.name ?? 'GDN Block';
-    
-    if (_gdnMapImage == null) {
-      return const Center(child: Text('Loading GDN Indoor Map...'));
-    }
-    
-    // Indoor Map Display (Binary GDN Map)
-    return Container(
-      color: Colors.black, // Background for the binary map
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text(
-              'INDOOR NAVIGATION: $destinationName',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          Expanded(
-            child: Center(
-              child: Image.asset(
-                'assets/maps/binary_paint_cleaned_gdn.png',
-                fit: BoxFit.contain, // Fit the image nicely within the container
-                errorBuilder: (context, error, stackTrace) => const Center(
-                  child: Text('Error: Indoor Map Asset Not Found!', style: TextStyle(color: Colors.white)),
-                ),
-              ),
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: Text(
-              'Pathfinding Logic (API CALLS) will be implemented here.',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
+  // --- Map Display Function ---
+  // This widget ONLY builds the outdoor map now
   Widget _buildOutdoorMap() {
     final userLatLng = LatLng(
       widget.currentPosition.latitude,
@@ -172,12 +96,17 @@ class _MapWidgetState extends State<MapWidget> {
     final LatLng destinationLatLng = widget.destination?.location ?? userLatLng;
     
     final Set<Marker> markers = {
-      // User's Current Location Marker (Blue)
+      // User's Current Location Marker
       Marker(
         markerId: const MarkerId('currentLocation'),
         position: userLatLng,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+        // --- FIX: Using the default blue pin ---
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue), 
         infoWindow: const InfoWindow(title: 'You Are Here'),
+        // --- NEW: Make marker flat and rotate with compass ---
+        flat: true,
+        rotation: widget.currentPosition.heading,
+        anchor: const Offset(0.5, 0.5), // Center the icon
       ),
     };
 
@@ -206,8 +135,6 @@ class _MapWidgetState extends State<MapWidget> {
       );
     }
     
-    // If not navigating, show map centered on the user. If navigating, the camera 
-    // should continuously track the user, which GoogleMap does automatically via myLocationEnabled.
     final target = userLatLng;
 
     return GoogleMap(
@@ -223,12 +150,16 @@ class _MapWidgetState extends State<MapWidget> {
       },
       markers: markers,
       polylines: polylines,
-      myLocationEnabled: false,
-      myLocationButtonEnabled: false, // We rely on our own camera updates
-
+      myLocationEnabled: false, // Explicitly false to hide the blue dot
+      myLocationButtonEnabled: false, 
       cameraTargetBounds: CameraTargetBounds(vitCampusBounds),
       minMaxZoomPreference: const MinMaxZoomPreference(15.9, 19.0),
       rotateGesturesEnabled: false,
+      // --- NEW: Control gestures based on navigation ---
+      
+      zoomGesturesEnabled: true,
+      scrollGesturesEnabled: true,
+      tiltGesturesEnabled: true,
     );
   }
 
@@ -238,12 +169,9 @@ class _MapWidgetState extends State<MapWidget> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // Main Hybrid Logic: Switch to indoor map if conditions are met
-    if (_isInsideGdn) {
-      return _buildIndoorMap();
-    } else {
-      return _buildOutdoorMap();
-    }
+    // This widget now *only* builds the outdoor map.
+    // The logic to switch to indoor is in HomeScreen.
+    return _buildOutdoorMap();
   }
 }
 //Older code
