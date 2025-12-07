@@ -5,6 +5,7 @@ import 'package:pathfinder_indoor_navigation/models/destination.dart';
 import 'package:pathfinder_indoor_navigation/widgets/map_widget.dart';
 import 'package:pathfinder_indoor_navigation/screens/indoor_navigation_screen.dart'; 
 import 'package:pathfinder_indoor_navigation/screens/ar_navigation_screen.dart'; 
+import 'package:pathfinder_indoor_navigation/widgets/arrival_dialog.dart'; // Ensure this matches Step 1
 import 'package:searchfield/searchfield.dart';
 import 'package:camera/camera.dart'; 
 import 'package:collection/collection.dart'; // For firstWhereOrNull
@@ -23,14 +24,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   Position? _currentPosition;
-  Destination? _selectedDestination; // The *current* navigation target (could be a building)
-  Destination? _finalIndoorDestination; // The *final* indoor target (e.g., G01)
+  Destination? _selectedDestination; // The *current* navigation target
+  Destination? _finalIndoorDestination; // The *final* indoor target
   StreamSubscription<Position>? _positionStreamSubscription;
   final _searchController = TextEditingController();
   bool _isNavigating = false; 
 
-  // --- NEW: Proximity check radius ---
-  static const double INDOOR_HANDOFF_RADIUS = 20.0; // 20 meters
+  // --- UPDATED: Increased radius to 80m for better detection ---
+  static const double INDOOR_HANDOFF_RADIUS = 80.0; 
 
   @override
   void initState() {
@@ -94,8 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
 
-      // --- NEW: Proximity Handoff Logic ---
-      // Check if we are currently navigating to an indoor final destination
+      // --- Proximity Handoff Logic ---
       if (_isNavigating && _finalIndoorDestination != null && _selectedDestination != null) {
         
         // Calculate distance to the building entrance
@@ -106,15 +106,66 @@ class _HomeScreenState extends State<HomeScreen> {
           _selectedDestination!.location.longitude,
         );
 
+        // --- DEBUG PRINT ---
+        print("Distance to GDN Entrance: ${distance.toStringAsFixed(2)} meters");
+
         // If we are within the handoff radius
         if (distance < INDOOR_HANDOFF_RADIUS) {
-          // --- CHECK: Prevent duplicate handoffs ---
           if (ModalRoute.of(context)?.isCurrent ?? false) {
-             _triggerIndoorHandoff();
+             // Show the popup first, then switch
+             _showArrivalDialogAndSwitch();
           }
         }
       }
     });
+  }
+
+  // --- NEW: Updated Function to handle the timer dialog ---
+  void _showArrivalDialogAndSwitch() {
+    // 1. Pause navigation updates immediately so the dialog doesn't trigger twice
+    setState(() {
+      _isNavigating = false;
+    });
+
+    // 2. Show the smart dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false, // User must either wait or click a button
+      builder: (context) => ArrivalDialog(
+        destinationName: _finalIndoorDestination?.name ?? "Indoor Location",
+        
+        // CHOICE A: Switch Now (Manual button or Timer end)
+        onSwitchNow: () {
+          Navigator.of(context).pop(); // Close dialog
+          _triggerIndoorHandoff();     // Go to indoor screen
+        },
+        
+        // CHOICE B: Stay Here
+        onStay: () {
+          Navigator.of(context).pop(); // Close dialog
+          // We intentionally remain with _isNavigating = false.
+          // This keeps the user on the map with the path visible,
+          // but stops the "You have arrived" loop.
+        },
+      ),
+    );
+  }
+
+  void _triggerIndoorHandoff() {
+      // Navigate to the indoor screen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => IndoorNavigationScreen(
+            preselectedDestinationName: _finalIndoorDestination!.name,
+            preselectedStartName: "Entrance", 
+            cameras: widget.cameras,
+          ),
+        ),
+      );
+
+      // Clear the outdoor selection state so when they come back, it's clean
+      _clearSelection();
   }
 
   void _showErrorDialog(String message) {
@@ -148,14 +199,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onStart2DNavigation() {
     if (_selectedDestination == null) return;
     
-    // If the destination is indoor, we just start navigating to the building.
-    // The location stream (_startLocationStream) will handle the handoff.
     if (_selectedDestination!.isIndoor || _finalIndoorDestination != null) {
       setState(() {
         _isNavigating = true;
       });
     } else {
-      // It's a pure outdoor destination
       setState(() {
         _isNavigating = true;
       });
@@ -169,7 +217,6 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // AR Nav will just navigate to the *current* target (the building entrance)
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -179,35 +226,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-    // Note: We don't clear selection, AR is just a view
   }
-
-  // --- NEW: This is the function that switches to the indoor screen ---
-  void _triggerIndoorHandoff() {
-    // --- NEW: Check if we're already on the indoor screen ---
-    if (ModalRoute.of(context)?.isCurrent ?? false) {
-      // Stop the outdoor navigation
-      setState(() {
-        _isNavigating = false;
-      });
-
-      // Navigate to the indoor screen, passing both start and end names
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => IndoorNavigationScreen(
-            preselectedDestinationName: _finalIndoorDestination!.name,
-            preselectedStartName: "Entrance", // Default to "Entrance" as requested
-            cameras: widget.cameras,
-          ),
-        ),
-      );
-
-      // Clear everything
-      _clearSelection();
-    }
-  }
-
 
   @override
   Widget build(BuildContext context) {
@@ -226,7 +245,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           if (_isNavigating) _buildStopNavigationButton(),
 
-          // --- NEW: Add the "Simulate Arrival" button ---
+          // The debug button is still useful for testing the new dialog
           if (_isNavigating && _finalIndoorDestination != null)
             _buildSimulateArrivalButton(),
         ],
@@ -243,14 +262,14 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Column(
             children: [
-              _buildDestinationSelector(), // The single search bar
+              _buildDestinationSelector(),
               const SizedBox(height: 20),
               Expanded(
                 child: Card(
                   clipBehavior: Clip.antiAlias,
                   elevation: 4,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  child: MapWidget( // This is your Google Map Widget
+                  child: MapWidget(
                     key: mapKey, 
                     currentPosition: _currentPosition!,
                     destination: _selectedDestination,
@@ -258,7 +277,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 80), // Space for the button
+              const SizedBox(height: 80),
             ],
           ),
           if (_selectedDestination != null) 
@@ -275,7 +294,7 @@ class _HomeScreenState extends State<HomeScreen> {
       key: mapKey,
       currentPosition: _currentPosition!,
       destination: _selectedDestination,
-      isNavigating: true, // True for outdoor nav
+      isNavigating: true,
     );
   }
 
@@ -287,27 +306,18 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // Button 1: 2D Navigation
           Expanded(
             child: ElevatedButton.icon(
               icon: const Icon(Icons.map),
               label: const Text('2D Nav'),
-              style: ElevatedButton.styleFrom(
-                // Style will be inherited from main.dart's theme
-              ),
               onPressed: _onStart2DNavigation,
             ),
           ),
           const SizedBox(width: 12),
-
-          // Button 2: AR Navigation
           Expanded(
             child: ElevatedButton.icon(
               icon: const Icon(Icons.camera_alt),
               label: const Text('AR Nav'),
-              style: ElevatedButton.styleFrom(
-                // Style will be inherited from main.dart's theme
-              ),
               onPressed: _onStartARNavigation,
             ),
           ),
@@ -337,7 +347,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 fontWeight: FontWeight.bold,
               )),
           onPressed: () {
-            // Updated to clear all navigation state
             _clearSelection();
           },
           child: const Text('Stop'),
@@ -346,13 +355,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- NEW: A developer button to test the handoff ---
   Widget _buildSimulateArrivalButton() {
     return Positioned(
       bottom: 32.0,
       right: 16.0,
       child: FloatingActionButton(
-        onPressed: _triggerIndoorHandoff, // Manually trigger the handoff
+        onPressed: _showArrivalDialogAndSwitch, 
         tooltip: 'Simulate Arrival at GDN',
         backgroundColor: Colors.amber,
         child: const Icon(Icons.directions_walk, color: Colors.black),
@@ -383,28 +391,20 @@ class _HomeScreenState extends State<HomeScreen> {
             final destination = item.item;
             if (destination == null) return;
 
-            // --- THIS IS THE KEY LOGIC ---
             if (destination.isIndoor) {
-              // User selected an INDOOR location (e.g., "GDN G01")
-
-              // Find the "Entrance" destination object for the building
               final buildingEntrance = destinations.firstWhereOrNull(
-                (d) => d.id == 'gdn_entrance_target' // Find the entrance by its ID
+                (d) => d.id == 'gdn_entrance_target'
               );
 
               setState(() {
-                // Set the *final* destination to the room
                 _finalIndoorDestination = destination;
-                // Set the *current* navigation target to the building entrance
                 _selectedDestination = buildingEntrance; 
-                // Update search bar to show the FINAL destination
                 _searchController.text = destination.name; 
               });
 
             } else {
-              // User selected an OUTDOOR location.
               setState(() {
-                _finalIndoorDestination = null; // Clear indoor target
+                _finalIndoorDestination = null;
                 _selectedDestination = destination;
                 _searchController.text = item.searchKey;
               });
