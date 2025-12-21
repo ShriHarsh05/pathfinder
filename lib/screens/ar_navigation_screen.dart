@@ -4,7 +4,7 @@ import 'package:pathfinder_indoor_navigation/models/destination.dart';
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_compass/flutter_compass.dart';
-import 'dart:math' as math;
+// import 'dart:math' as math;
 
 
 class ARNavigationScreen extends StatefulWidget {

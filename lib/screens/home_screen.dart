@@ -5,10 +5,11 @@ import 'package:pathfinder_indoor_navigation/models/destination.dart';
 import 'package:pathfinder_indoor_navigation/widgets/map_widget.dart';
 import 'package:pathfinder_indoor_navigation/screens/indoor_navigation_screen.dart'; 
 import 'package:pathfinder_indoor_navigation/screens/ar_navigation_screen.dart'; 
-import 'package:pathfinder_indoor_navigation/widgets/arrival_dialog.dart'; // Ensure this matches Step 1
+import 'package:pathfinder_indoor_navigation/widgets/arrival_dialog.dart'; 
+import 'package:pathfinder_indoor_navigation/widgets/destination_reached_dialog.dart'; 
 import 'package:searchfield/searchfield.dart';
 import 'package:camera/camera.dart'; 
-import 'package:collection/collection.dart'; // For firstWhereOrNull
+import 'package:collection/collection.dart'; 
 
 class HomeScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -24,14 +25,17 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   Position? _currentPosition;
-  Destination? _selectedDestination; // The *current* navigation target
-  Destination? _finalIndoorDestination; // The *final* indoor target
+  Destination? _selectedDestination; 
+  Destination? _finalIndoorDestination; 
   StreamSubscription<Position>? _positionStreamSubscription;
   final _searchController = TextEditingController();
   bool _isNavigating = false; 
 
-  // --- UPDATED: Increased radius to 80m for better detection ---
-  static const double INDOOR_HANDOFF_RADIUS = 80.0; 
+  // --- UPDATED RADIUS SETTINGS ---
+  // 25.0 meters for both indoor handoff and outdoor arrival (consistent threshold)
+  static const double INDOOR_HANDOFF_RADIUS = 25.0; 
+  // 25.0 meters for outdoor arrival (consistent with indoor handoff)
+  static const double OUTDOOR_ARRIVAL_RADIUS = 25.0; 
 
   @override
   void initState() {
@@ -46,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        _showErrorDialog('Location services are disabled. Please enable them.');
+        _showErrorDialog('Location services are disabled.');
         return;
       }
 
@@ -60,8 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       if (permission == LocationPermission.deniedForever) {
-        _showErrorDialog(
-            'Location permissions are permanently denied. We cannot request permissions.');
+        _showErrorDialog('Location permissions are permanently denied.');
         return;
       }
 
@@ -78,7 +81,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _startLocationStream();
     } catch (e) {
       print("Error initializing location: $e");
-      _showErrorDialog("Could not get initial location. Please try again.");
     }
   }
   
@@ -86,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _positionStreamSubscription = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 1, // Update every 1 meter
+        distanceFilter: 1, 
       ),
     ).listen((Position position) {
       if (mounted) {
@@ -95,10 +97,8 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
 
-      // --- Proximity Handoff Logic ---
-      if (_isNavigating && _finalIndoorDestination != null && _selectedDestination != null) {
+      if (_isNavigating && _selectedDestination != null) {
         
-        // Calculate distance to the building entrance
         final distance = Geolocator.distanceBetween(
           position.latitude,
           position.longitude,
@@ -106,53 +106,67 @@ class _HomeScreenState extends State<HomeScreen> {
           _selectedDestination!.location.longitude,
         );
 
-        // --- DEBUG PRINT ---
-        print("Distance to GDN Entrance: ${distance.toStringAsFixed(2)} meters");
+        // --- CASE 1: INDOOR HANDOFF ---
+        if (_finalIndoorDestination != null) {
+           // Debug print to see distance in console
+           print("Distance to Entrance: ${distance.toStringAsFixed(2)}m (Threshold: $INDOOR_HANDOFF_RADIUS)");
+           
+           if (distance < INDOOR_HANDOFF_RADIUS) {
+             if (ModalRoute.of(context)?.isCurrent ?? false) {
+                _showHandoffDialog();
+             }
+           }
+        } 
+        // --- CASE 2: OUTDOOR ARRIVAL ---
+        else {
+           // Debug print to see distance in console
+           print("Distance to Destination: ${distance.toStringAsFixed(2)}m (Threshold: $OUTDOOR_ARRIVAL_RADIUS)");
 
-        // If we are within the handoff radius
-        if (distance < INDOOR_HANDOFF_RADIUS) {
-          if (ModalRoute.of(context)?.isCurrent ?? false) {
-             // Show the popup first, then switch
-             _showArrivalDialogAndSwitch();
-          }
+           if (distance < OUTDOOR_ARRIVAL_RADIUS) {
+             if (ModalRoute.of(context)?.isCurrent ?? false) {
+                _showOutdoorArrivalDialog();
+             }
+           }
         }
       }
     });
   }
 
-  // --- NEW: Updated Function to handle the timer dialog ---
-  void _showArrivalDialogAndSwitch() {
-    // 1. Pause navigation updates immediately so the dialog doesn't trigger twice
-    setState(() {
-      _isNavigating = false;
-    });
+  void _showHandoffDialog() {
+    setState(() { _isNavigating = false; }); 
 
-    // 2. Show the smart dialog
     showDialog(
       context: context,
-      barrierDismissible: false, // User must either wait or click a button
+      barrierDismissible: false, 
       builder: (context) => ArrivalDialog(
         destinationName: _finalIndoorDestination?.name ?? "Indoor Location",
-        
-        // CHOICE A: Switch Now (Manual button or Timer end)
         onSwitchNow: () {
-          Navigator.of(context).pop(); // Close dialog
-          _triggerIndoorHandoff();     // Go to indoor screen
+          Navigator.of(context).pop(); 
+          _triggerIndoorHandoff();     
         },
-        
-        // CHOICE B: Stay Here
         onStay: () {
-          Navigator.of(context).pop(); // Close dialog
-          // We intentionally remain with _isNavigating = false.
-          // This keeps the user on the map with the path visible,
-          // but stops the "You have arrived" loop.
+          Navigator.of(context).pop(); 
+        },
+      ),
+    );
+  }
+
+  void _showOutdoorArrivalDialog() {
+    setState(() { _isNavigating = false; }); 
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => DestinationReachedDialog(
+        destinationName: _selectedDestination?.name ?? "Destination",
+        onOk: () {
+          _clearSelection(); 
         },
       ),
     );
   }
 
   void _triggerIndoorHandoff() {
-      // Navigate to the indoor screen
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -163,8 +177,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       );
-
-      // Clear the outdoor selection state so when they come back, it's clean
       _clearSelection();
   }
 
@@ -173,13 +185,10 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Location Error'),
+        title: const Text('Error'),
         content: Text(message),
         actions: <Widget>[
-          TextButton(
-            child: const Text('OK'),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
+          TextButton(child: const Text('OK'), onPressed: () => Navigator.of(context).pop()),
         ],
       ),
     );
@@ -198,22 +207,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onStart2DNavigation() {
     if (_selectedDestination == null) return;
-    
-    if (_selectedDestination!.isIndoor || _finalIndoorDestination != null) {
-      setState(() {
-        _isNavigating = true;
-      });
-    } else {
-      setState(() {
-        _isNavigating = true;
-      });
-    }
+    setState(() {
+      _isNavigating = true;
+    });
   }
 
   void _onStartARNavigation() {
     if (_selectedDestination == null) return;
     if (widget.cameras.isEmpty) {
-      _showErrorDialog("No camera found. Cannot start AR Navigation.");
+      _showErrorDialog("No camera found.");
       return;
     }
 
@@ -245,8 +247,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           if (_isNavigating) _buildStopNavigationButton(),
 
-          // The debug button is still useful for testing the new dialog
-          if (_isNavigating && _finalIndoorDestination != null)
+          if (_isNavigating && _selectedDestination != null)
             _buildSimulateArrivalButton(),
         ],
       ),
@@ -255,7 +256,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSelectionView() {
     final mapKey = ValueKey('selection_${_selectedDestination?.id ?? "none"}');
-
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Stack(
@@ -289,7 +289,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildNavigationView() {
     final mapKey = ValueKey('navigation_${_selectedDestination?.id ?? "none"}');
-
     return MapWidget(
       key: mapKey,
       currentPosition: _currentPosition!,
@@ -300,9 +299,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildNavigationButtons() {
     return Positioned(
-      bottom: 16.0,
-      left: 16.0,
-      right: 16.0,
+      bottom: 16.0, left: 16.0, right: 16.0,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
@@ -328,27 +325,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildStopNavigationButton() {
     return Positioned(
-      bottom: 32.0,
-      left: 0,
-      right: 0,
+      bottom: 32.0, left: 0, right: 0,
       child: Center(
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 40, vertical: 16.0),
-              shape: RoundedRectangleBorder(
-                borderRadius:
-                    BorderRadius.circular(30.0),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              )),
-          onPressed: () {
-            _clearSelection();
-          },
+              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16.0),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30.0))),
+          onPressed: _clearSelection,
           child: const Text('Stop'),
         ),
       ),
@@ -360,8 +345,14 @@ class _HomeScreenState extends State<HomeScreen> {
       bottom: 32.0,
       right: 16.0,
       child: FloatingActionButton(
-        onPressed: _showArrivalDialogAndSwitch, 
-        tooltip: 'Simulate Arrival at GDN',
+        onPressed: () {
+          if (_finalIndoorDestination != null) {
+            _showHandoffDialog();
+          } else {
+            _showOutdoorArrivalDialog();
+          }
+        }, 
+        tooltip: 'Simulate Arrival',
         backgroundColor: Colors.amber,
         child: const Icon(Icons.directions_walk, color: Colors.black),
       ),
@@ -376,32 +367,24 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
         child: SearchField<Destination>(
           controller: _searchController,
-          hint: 'Select a Destination (Indoor or Outdoor)',
-          suggestions: destinations 
-              .map((dest) =>
-                  SearchFieldListItem<Destination>(dest.name, item: dest))
-              .toList(),
+          hint: 'Select a Destination',
+          suggestions: destinations.map((dest) => SearchFieldListItem<Destination>(dest.name, item: dest)).toList(),
           searchInputDecoration: const InputDecoration(
             border: InputBorder.none,
             prefixIcon: Icon(Icons.location_on),
           ),
           onSuggestionTap: (SearchFieldListItem<Destination> item) {
             FocusScope.of(context).unfocus();
-            
             final destination = item.item;
             if (destination == null) return;
 
             if (destination.isIndoor) {
-              final buildingEntrance = destinations.firstWhereOrNull(
-                (d) => d.id == 'gdn_entrance_target'
-              );
-
+              final buildingEntrance = destinations.firstWhereOrNull((d) => d.id == 'gdn_entrance_target');
               setState(() {
                 _finalIndoorDestination = destination;
                 _selectedDestination = buildingEntrance; 
                 _searchController.text = destination.name; 
               });
-
             } else {
               setState(() {
                 _finalIndoorDestination = null;

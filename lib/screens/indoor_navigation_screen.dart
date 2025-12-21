@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pathfinder_indoor_navigation/models/indoor_node.dart';
 import 'package:pathfinder_indoor_navigation/services/indoor_map_service.dart';
 import 'package:pathfinder_indoor_navigation/widgets/indoor_map_widget.dart';
+import 'package:pathfinder_indoor_navigation/widgets/destination_reached_dialog.dart'; // Import the new dialog
 import 'package:searchfield/searchfield.dart';
 import 'package:provider/provider.dart';
 import 'package:camera/camera.dart'; 
@@ -20,11 +21,9 @@ class IndoorNavigationScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  // 1. Made State public
   IndoorNavigationScreenState createState() => IndoorNavigationScreenState();
 }
 
-// 2. Made State class public
 class IndoorNavigationScreenState extends State<IndoorNavigationScreen> {
   late IndoorMapService _mapService;
   List<IndoorNode> _roomNodes = [];
@@ -34,7 +33,6 @@ class IndoorNavigationScreenState extends State<IndoorNavigationScreen> {
   final _startSearchController = TextEditingController();
   final _endSearchController = TextEditingController();
 
-  // 3. Changed from UniqueKey to a GlobalKey to control the child
   final GlobalKey<IndoorMapWidgetState> _mapWidgetKey = GlobalKey<IndoorMapWidgetState>();
 
   @override
@@ -52,6 +50,7 @@ class IndoorNavigationScreenState extends State<IndoorNavigationScreen> {
 
     bool needsPathCalculation = false;
 
+    // Handle pre-filled Destination (from Outdoor Handoff)
     if (widget.preselectedDestinationName != null) {
       final preselectedNode = _roomNodes.firstWhereOrNull(
         (node) => node.name == widget.preselectedDestinationName,
@@ -66,6 +65,7 @@ class IndoorNavigationScreenState extends State<IndoorNavigationScreen> {
       }
     }
 
+    // Handle pre-filled Start (e.g., "Entrance")
     if (widget.preselectedStartName != null) {
       final preselectedNode = _roomNodes.firstWhereOrNull(
         (node) => node.name == widget.preselectedStartName,
@@ -87,6 +87,30 @@ class IndoorNavigationScreenState extends State<IndoorNavigationScreen> {
 
   void _calculatePath() {
     if (_startNode != null && _endNode != null) {
+      
+      // --- NEW: Check for Arrival ---
+      // If the user updates their location to be the same as the destination,
+      // it means they have arrived.
+      if (_startNode!.id == _endNode!.id) {
+        setState(() {
+          _path = []; // Clear the path
+        });
+        
+        // Show the celebration dialog
+        showDialog(
+          context: context,
+          builder: (context) => DestinationReachedDialog(
+            destinationName: _endNode!.name ?? "Destination",
+            onOk: () {
+              // You could navigate back to home here if you wanted
+              // Navigator.of(context).pop(); 
+            },
+          ),
+        );
+        return;
+      }
+
+      // Otherwise, calculate the path normally
       setState(() {
         _path = _mapService.findPath(_startNode!.id, _endNode!.id);
       });
@@ -95,17 +119,12 @@ class IndoorNavigationScreenState extends State<IndoorNavigationScreen> {
         _path = [];
       });
     }
-    // We no longer need to change the key
-    // _mapWidgetKey = UniqueKey();
   }
   
-  // 4. NEW: Function to be called by the button
   void _reCenterMap() {
     if (_startNode != null) {
-      // Call the public zoomToNode function on the map widget's state
       _mapWidgetKey.currentState?.zoomToNode(_startNode!);
     } else if (_path.isEmpty) {
-      // If no start node, just reset the zoom
       _mapWidgetKey.currentState?.resetZoom();
     }
   }
@@ -129,7 +148,6 @@ class IndoorNavigationScreenState extends State<IndoorNavigationScreen> {
                   _startNode = node;
                 });
                 _calculatePath();
-                // Auto-zoom when a new start node is selected
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                    _reCenterMap();
                 });
@@ -166,8 +184,8 @@ class IndoorNavigationScreenState extends State<IndoorNavigationScreen> {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 child: IndoorMapWidget(
-                  key: _mapWidgetKey, // 5. Assign the GlobalKey
-                  // 6. FIX: Use the clean map file name
+                  key: _mapWidgetKey, 
+                  // Using your renamed file
                   mapImagePath: 'assets/maps/gdn_ground_floor.png', 
                   path: _path,
                   startNode: _startNode,
@@ -178,9 +196,8 @@ class IndoorNavigationScreenState extends State<IndoorNavigationScreen> {
           ],
         ),
       ),
-      // 7. NEW: Add the Floating Action Button
       floatingActionButton: FloatingActionButton(
-        onPressed: _reCenterMap, // Call our re-center function
+        onPressed: _reCenterMap, 
         tooltip: 'Re-center on Start',
         child: const Icon(Icons.my_location),
       ),

@@ -6,10 +6,11 @@ import 'package:pathfinder_indoor_navigation/models/destination.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http; // Make sure you have http package
 import 'dart:convert';
-import 'package:flutter_polyline_points/flutter_polyline_points.dart'; // Make sure you have this
+// import 'package:flutter_polyline_points/flutter_polyline_points.dart'; // Make sure you have this
 
 // IMPORTANT: Paste your Google Maps API Key here
 const String GOOGLE_MAPS_API_KEY = "YATyaZfrXQscfRjZBmESic2Cw";
+const String ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjEyYWZhZjA1NWFkZjQ1MjQ5NjM3ZDRhMTQ2ZjAxNjJmIiwiaCI6Im11cm11cjY0In0=";
 
 final LatLngBounds vitCampusBounds = LatLngBounds(
   southwest: const LatLng(12.9680, 79.1540),
@@ -37,8 +38,8 @@ class _MapWidgetState extends State<MapWidget> {
   // --- REMOVED Custom Icon Variable ---
 
   final Set<Polyline> _polylines = {};
-  List<LatLng> _polylineCoordinates = [];
-  final PolylinePoints _polylinePoints = PolylinePoints();
+  // List<LatLng> _polylineCoordinates = [];
+  // final PolylinePoints _polylinePoints = PolylinePoints();
 
   @override
   void initState() {
@@ -83,38 +84,67 @@ class _MapWidgetState extends State<MapWidget> {
       });
       return;
     }
-
-    final LatLng userLatLng = LatLng(
-      widget.currentPosition.latitude,
-      widget.currentPosition.longitude,
-    );
+    final startLat = widget.currentPosition.latitude;
+    final startLng = widget.currentPosition.longitude;
+    final endLat = widget.destination!.location.latitude;
+    final endLng = widget.destination!.location.longitude;
+    final String url =
+        'https://api.openrouteservice.org/v2/directions/foot-walking?api_key=$ORS_API_KEY&start=$startLng,$startLat&end=$endLng,$endLat';
     
-    final LatLng destinationLatLng = widget.destination!.location;
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        
+        // Parse the coordinates from the GeoJSON response
+        // Structure: features[0] -> geometry -> coordinates (List of [lng, lat])
+        final List<dynamic> coords = data['features'][0]['geometry']['coordinates'];
+        
+        // Convert to Google Maps LatLng (Note: ORS sends [lng, lat], Google wants [lat, lng])
+        final List<LatLng> polylineCoordinates = coords
+            .map((c) => LatLng(c[1], c[0]))
+            .toList();
 
-    // This is the "L-Path" workaround, which is great
-    // because it doesn't need an API key.
-    final LatLng cornerPoint = LatLng(userLatLng.latitude, destinationLatLng.longitude);
-    
-    _polylineCoordinates = [
-      userLatLng,       // Start
-      cornerPoint,      // The "corner"
-      destinationLatLng // End
-    ];
+        setState(() {
+          _polylines.clear();
+          _polylines.add(
+            Polyline(
+              polylineId: const PolylineId('route_path'),
+              points: polylineCoordinates,
+              color: Colors.blue, // Nice navigation blue
+              width: 6,
+              jointType: JointType.round,
+            ),
+          );
+        });
+      } else {
+        print("ORS Error: ${response.body}");
+        _drawFallbackPath(); // If API fails, use the L-shape fallback
+      }
+    } catch (e) {
+      print("Error fetching route: $e");
+      _drawFallbackPath(); // If network error, use fallback
+    }
+  }
+    void _drawFallbackPath() {
+    if (widget.destination == null) return;
+    final userLatLng = LatLng(widget.currentPosition.latitude, widget.currentPosition.longitude);
+    final destLatLng = widget.destination!.location;
+    final cornerPoint = LatLng(userLatLng.latitude, destLatLng.longitude);
 
     setState(() {
       _polylines.clear();
       _polylines.add(
         Polyline(
-          polylineId: const PolylineId('route_path'),
-          points: _polylineCoordinates,
-          color: Colors.lightBlueAccent,
-          width: 6,
+          polylineId: const PolylineId('fallback_path'),
+          points: [userLatLng, cornerPoint, destLatLng],
+          color: Colors.lightBlueAccent, // Lighter color for fallback
+          width: 5,
+          patterns: [PatternItem.dash(10), PatternItem.gap(10)], // Dashed to indicate "approximate"
         ),
       );
     });
   }
-
-
   Widget _buildOutdoorMap() {
     final userLatLng = LatLng(
       widget.currentPosition.latitude,
@@ -152,13 +182,8 @@ class _MapWidgetState extends State<MapWidget> {
       },
       markers: markers,
       polylines: _polylines, 
-      
-      // --- THE FIX ---
-      // Set myLocationEnabled to true to show the default blue dot.
       myLocationEnabled: true, 
-      // Set myLocationButtonEnabled to true so the user can re-center.
       myLocationButtonEnabled: true, 
-      
       cameraTargetBounds: CameraTargetBounds(vitCampusBounds),
       minMaxZoomPreference: const MinMaxZoomPreference(15.9, 19.0),
       rotateGesturesEnabled: false,
