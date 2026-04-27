@@ -52,6 +52,9 @@ class IndoorMapService {
     return _nodes.where((node) => node.type == 'room').toList();
   }
 
+  // Get all nodes (rooms + path nodes) — used for nearest-node lookup
+  List<IndoorNode> getAllNodes() => List.unmodifiable(_nodes);
+
   // Get a node by its ID
   IndoorNode? getNodeById(int id) {
     return _nodes.firstWhereOrNull((node) => node.id == id);

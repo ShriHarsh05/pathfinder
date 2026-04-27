@@ -2,29 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pathfinder_indoor_navigation/models/indoor_node.dart';
 import 'dart:ui' as ui;
-import 'dart:ui';
 import 'dart:math' as math;
 
 class IndoorMapWidget extends StatefulWidget {
   final String mapImagePath;
   final List<IndoorNode> path;
-  final IndoorNode? startNode;
   final IndoorNode? endNode;
+
+  /// Live position from the IoT API (in floor plan pixel coordinates).
+  final Offset? livePosition;
 
   const IndoorMapWidget({
     Key? key,
     required this.mapImagePath,
     this.path = const [],
-    this.startNode,
     this.endNode,
+    this.livePosition,
   }) : super(key: key);
 
   @override
-  // 1. Made State public (removed the '_')
   IndoorMapWidgetState createState() => IndoorMapWidgetState();
 }
 
-// 2. Made State class public
 class IndoorMapWidgetState extends State<IndoorMapWidget> {
   ui.Image? _mapImage;
   late final TransformationController _controller;
@@ -48,18 +47,11 @@ class IndoorMapWidgetState extends State<IndoorMapWidget> {
     if (widget.mapImagePath != oldWidget.mapImagePath) {
       _loadMapImage();
     }
-
-    // Auto-zoom when the startNode *first* appears
-    if (widget.startNode != null && oldWidget.startNode == null) {
+    // Auto-center on live position when it first arrives
+    if (widget.livePosition != null && oldWidget.livePosition == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          zoomToNode(widget.startNode!);
-        }
+        if (mounted) zoomToPosition(widget.livePosition!);
       });
-    } 
-    // Reset zoom if the start node is cleared
-    else if (widget.startNode == null && oldWidget.startNode != null) {
-      resetZoom();
     }
   }
 
@@ -69,43 +61,33 @@ class IndoorMapWidgetState extends State<IndoorMapWidget> {
       final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
       final frame = await codec.getNextFrame();
       if (mounted) {
-        setState(() {
-          _mapImage = frame.image;
-        });
+        setState(() => _mapImage = frame.image);
       }
     } catch (e) {
-      print("Error loading map image: $e");
+      debugPrint('Error loading map image: $e');
     }
   }
 
-  /// Resets the map view to its default, unzoomed state.
-  // 3. Made function public
   void resetZoom() {
     _controller.value = Matrix4.identity();
   }
 
-  /// Calculates the transformation to center the map on a specific node.
-  // 4. Made function public
-  void zoomToNode(IndoorNode node) {
+  void zoomToPosition(Offset position) {
     if (_mapImage == null || !mounted) return;
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
 
-    if (context.findRenderObject() == null) {
-      return;
-    }
-    final RenderBox renderBox = context.findRenderObject() as RenderBox;
     final Size widgetSize = renderBox.size;
+    const double zoomLevel = 2.5;
 
-    const double zoomLevel = 2.5; 
+    _controller.value = Matrix4.identity()
+      ..translate(widgetSize.width / 2, widgetSize.height / 2, 0.0)
+      ..scale(zoomLevel, zoomLevel, 1.0)
+      ..translate(-position.dx, -position.dy, 0.0);
+  }
 
-    final double widgetCenterX = widgetSize.width / 2;
-    final double widgetCenterY = widgetSize.height / 2;
-
-    final Matrix4 matrix = Matrix4.identity()
-      ..translate(widgetCenterX, widgetCenterY, 0.0) 
-      ..scale(zoomLevel, zoomLevel, 1.0) 
-      ..translate(-node.x.toDouble(), -node.y.toDouble(), 0.0);
-
-    _controller.value = matrix;
+  void zoomToNode(IndoorNode node) {
+    zoomToPosition(Offset(node.x.toDouble(), node.y.toDouble()));
   }
 
   @override
@@ -116,14 +98,14 @@ class IndoorMapWidgetState extends State<IndoorMapWidget> {
 
     return InteractiveViewer(
       transformationController: _controller,
-      minScale: 0.1, 
-      maxScale: 4.0, 
-      constrained: false, 
+      minScale: 0.1,
+      maxScale: 4.0,
+      constrained: false,
       child: CustomPaint(
         painter: PathPainter(
           mapImage: _mapImage!,
           path: widget.path,
-          startNode: widget.startNode,
+          livePosition: widget.livePosition,
           endNode: widget.endNode,
         ),
         child: SizedBox(
@@ -135,129 +117,119 @@ class IndoorMapWidgetState extends State<IndoorMapWidget> {
   }
 }
 
-// --- The Custom Painter (No changes below this line) ---
 class PathPainter extends CustomPainter {
   final ui.Image mapImage;
   final List<IndoorNode> path;
-  final IndoorNode? startNode;
   final IndoorNode? endNode;
+  final Offset? livePosition;
 
   PathPainter({
     required this.mapImage,
     required this.path,
-    this.startNode,
     this.endNode,
+    this.livePosition,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    // ... (drawing logic is the same) ...
-    final Rect srcRect = Rect.fromLTWH(0, 0, mapImage.width.toDouble(), mapImage.height.toDouble());
-    final Rect dstRect = Rect.fromLTWH(0, 0, size.width, size.height);
-    canvas.drawImageRect(mapImage, srcRect, dstRect, Paint());
+    // Draw floor plan
+    canvas.drawImageRect(
+      mapImage,
+      Rect.fromLTWH(0, 0, mapImage.width.toDouble(), mapImage.height.toDouble()),
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint(),
+    );
 
+    // Draw path
     if (path.length > 1) {
       final pathPaint = Paint()
         ..color = Colors.blue
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0; 
+        ..strokeWidth = 2.0;
 
-      final ui.Path drawPath = ui.Path();
+      final drawPath = ui.Path();
       drawPath.moveTo(path.first.x.toDouble(), path.first.y.toDouble());
       for (int i = 1; i < path.length; i++) {
         drawPath.lineTo(path[i].x.toDouble(), path[i].y.toDouble());
       }
-      
       _drawDashedPath(canvas, drawPath, pathPaint, 10.0, 5.0);
     }
-    
+
+    // Draw destination pin
     if (endNode != null) {
-      _drawTargetMarker(canvas, endNode!, Colors.red);
+      _drawPinMarker(canvas, Offset(endNode!.x.toDouble(), endNode!.y.toDouble()), Colors.red);
     }
 
-    if (startNode != null) {
-      _drawTargetMarker(canvas, startNode!, Colors.green);
+    // Draw live user position (pulsing blue dot)
+    if (livePosition != null) {
+      _drawLivePositionDot(canvas, livePosition!);
     }
   }
 
-  void _drawTargetMarker(Canvas canvas, IndoorNode node, Color color) {
-    if (color == Colors.red) {
-      _drawPinMarker(canvas, node, color);
-    } else {
-      const double innerRadius = 7.0;
-      const double innerRadiusWhite = 6.0;
-      const double haloRadius = 12.0;
-
-      final haloPaint = Paint()
-        ..color = color.withAlpha((0.2 * 255).round())
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(Offset(node.x.toDouble(), node.y.toDouble()), haloRadius, haloPaint);
-
-      final fillPaint = Paint()
-        ..color = color
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(Offset(node.x.toDouble(), node.y.toDouble()), innerRadius, fillPaint);
-
-      final borderPaint = Paint()
-        ..color = Colors.white
+  void _drawLivePositionDot(Canvas canvas, Offset pos) {
+    // Outer halo
+    canvas.drawCircle(
+      pos,
+      16.0,
+      Paint()..color = Colors.blue.withAlpha(50),
+    );
+    // Accuracy ring
+    canvas.drawCircle(
+      pos,
+      10.0,
+      Paint()
+        ..color = Colors.blue.withAlpha(100)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0; 
-      canvas.drawCircle(Offset(node.x.toDouble(), node.y.toDouble()), innerRadiusWhite, borderPaint);
-    }
+        ..strokeWidth = 1.5,
+    );
+    // White border
+    canvas.drawCircle(pos, 8.0, Paint()..color = Colors.white);
+    // Blue fill
+    canvas.drawCircle(pos, 6.5, Paint()..color = Colors.blue);
   }
 
-  void _drawPinMarker(Canvas canvas, IndoorNode node, Color color) {
-    final double tipX = node.x.toDouble();
-    final double tipY = node.y.toDouble();
+  void _drawPinMarker(Canvas canvas, Offset pos, Color color) {
     const double pinHeight = 30.0;
     const double headRadius = 10.0;
-    final double headCenterY = tipY - pinHeight + headRadius;
-    final double headCenterX = tipX;
+    final double headCenterY = pos.dy - pinHeight + headRadius;
 
-    final Paint fillPaint = Paint()..color = color;
-    final Paint whitePaint = Paint()..color = Colors.white;
-    final Paint shadowPaint = Paint()..color = Colors.black.withAlpha((0.3 * 255).round());
-
-    final shadowPath = Path();
-    shadowPath.addOval(Rect.fromCenter(center: Offset(tipX, tipY + 1), width: headRadius * 1.2, height: headRadius / 2));
-    canvas.drawPath(shadowPath, shadowPaint);
-
-    final Path path = Path();
-    path.moveTo(tipX, tipY); 
-    path.cubicTo(
-      tipX - headRadius * 0.7, tipY - (pinHeight * 0.4), 
-      tipX - headRadius, headCenterY - (headRadius * 0.5), 
-      tipX - headRadius, headCenterY 
-    );
-    
-    path.arcTo(
-      Rect.fromCircle(center: Offset(headCenterX, headCenterY), radius: headRadius),
-      math.pi, 
-      math.pi, 
-      false
+    // Shadow
+    canvas.drawPath(
+      Path()
+        ..addOval(Rect.fromCenter(
+            center: Offset(pos.dx, pos.dy + 1),
+            width: headRadius * 1.2,
+            height: headRadius / 2)),
+      Paint()..color = Colors.black.withAlpha(76),
     );
 
-    path.cubicTo(
-      tipX + headRadius, headCenterY - (headRadius * 0.5), 
-      tipX + headRadius * 0.7, tipY - (pinHeight * 0.4), 
-      tipX, tipY 
+    // Pin body
+    final pinPath = Path();
+    pinPath.moveTo(pos.dx, pos.dy);
+    pinPath.cubicTo(
+      pos.dx - headRadius * 0.7, pos.dy - pinHeight * 0.4,
+      pos.dx - headRadius, headCenterY - headRadius * 0.5,
+      pos.dx - headRadius, headCenterY,
     );
-    path.close();
-    canvas.drawPath(path, fillPaint);
-
-    canvas.drawCircle(Offset(tipX, headCenterY), headRadius / 2.5, whitePaint);
+    pinPath.arcTo(
+      Rect.fromCircle(center: Offset(pos.dx, headCenterY), radius: headRadius),
+      math.pi, math.pi, false,
+    );
+    pinPath.cubicTo(
+      pos.dx + headRadius, headCenterY - headRadius * 0.5,
+      pos.dx + headRadius * 0.7, pos.dy - pinHeight * 0.4,
+      pos.dx, pos.dy,
+    );
+    pinPath.close();
+    canvas.drawPath(pinPath, Paint()..color = color);
+    canvas.drawCircle(Offset(pos.dx, headCenterY), headRadius / 2.5, Paint()..color = Colors.white);
   }
 
-
   void _drawDashedPath(Canvas canvas, ui.Path path, Paint paint, double dashWidth, double dashSpace) {
-    final PathMetrics pathMetrics = path.computeMetrics();
-    for (PathMetric pathMetric in pathMetrics) {
+    for (final metric in path.computeMetrics()) {
       double distance = 0.0;
-      while (distance < pathMetric.length) {
-        canvas.drawPath(
-          pathMetric.extractPath(distance, distance + dashWidth),
-          paint,
-        );
+      while (distance < metric.length) {
+        canvas.drawPath(metric.extractPath(distance, distance + dashWidth), paint);
         distance += dashWidth + dashSpace;
       }
     }
@@ -266,8 +238,8 @@ class PathPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant PathPainter oldDelegate) {
     return oldDelegate.path != path ||
-           oldDelegate.mapImage != mapImage ||
-           oldDelegate.startNode != startNode ||
-           oldDelegate.endNode != endNode;
+        oldDelegate.mapImage != mapImage ||
+        oldDelegate.livePosition != livePosition ||
+        oldDelegate.endNode != endNode;
   }
 }
